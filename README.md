@@ -127,7 +127,7 @@ fmt.Printf("Hello %s\n", me.FirstName)
 | `client.Nodes` | List VPN server locations |
 | `client.Plans` | List available plans |
 | `client.Subscriptions` | List, get, configs, profile |
-| `client.Connect` | Connect, disconnect, status polling |
+| `client.Connect` | Connect, disconnect, status polling, content filtering |
 | `client.Usage` | Data usage status and reporting |
 | `client.Billing` | Stripe checkout, portal, cancel, invoices, trial |
 | `client.Payments` | Payment history, create payments |
@@ -183,6 +183,209 @@ if resp.Status == vynvpn.StatusReady {
     fmt.Println(resp.ConfigLink)
 }
 ```
+
+---
+
+## Dynamic Inbound Configuration
+
+Override the VPN protocol, transport, and security per-connection:
+
+```go
+// SOCKS5 proxy (for Chrome extensions, browsers)
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug: "de001",
+    InboundConfig: &vynvpn.InboundConfig{
+        Protocol: "socks",
+        Port:     1080,
+        Network:  "tcp",
+        Security: "none",
+    },
+})
+// resp.ConfigLink = "socks5://user:pass@node.example.com:1080#de001-abc12345"
+
+// VLESS + Reality (maximum stealth)
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug: "de001",
+    InboundConfig: &vynvpn.InboundConfig{
+        Protocol: "vless",
+        Network:  "tcp",
+        Security: "reality",
+        Flow:     "xtls-rprx-vision",
+        RealitySettings: &vynvpn.RealitySettings{
+            Dest:        "www.google.com:443",
+            ServerNames: []string{"www.google.com"},
+            ShortIds:    []string{"abcdef"},
+            Settings: vynvpn.RealityPublicSettings{
+                PublicKey:   "your-public-key",
+                Fingerprint: "chrome",
+            },
+        },
+    },
+})
+
+// VLESS + WebSocket (CDN compatible)
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug: "de001",
+    InboundConfig: &vynvpn.InboundConfig{
+        Protocol: "vless",
+        Network:  "ws",
+        Security: "tls",
+        WSSettings: &vynvpn.WSSettings{
+            Path: "/ws",
+            Host: "cdn.example.com",
+        },
+        TLSSettings: &vynvpn.TLSSettings{
+            ServerName:  "cdn.example.com",
+            Fingerprint: "chrome",
+        },
+    },
+})
+
+// VMess + gRPC
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug: "de001",
+    InboundConfig: &vynvpn.InboundConfig{
+        Protocol: "vmess",
+        Network:  "grpc",
+        Security: "tls",
+        GRPCSettings: &vynvpn.GRPCSettings{
+            ServiceName: "tunnel",
+            MultiMode:   true,
+        },
+    },
+})
+
+// HTTP/HTTPS proxy (for Chrome extensions)
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug: "de001",
+    InboundConfig: &vynvpn.InboundConfig{
+        Protocol: "http",
+        Port:     8080,
+        Network:  "tcp",
+        Security: "tls",
+        TLSSettings: &vynvpn.TLSSettings{
+            ServerName: "proxy.example.com",
+        },
+    },
+})
+// resp.ConfigLink = "https://user:pass@proxy.example.com:8080#de001-abc12345"
+```
+
+### Supported protocols
+
+| Protocol | Config link format | Use case |
+|----------|-------------------|----------|
+| `vless` | `vless://uuid@host:port?params#remark` | Desktop/mobile apps (xray, sing-box) |
+| `vmess` | `vmess://base64(json)` | Desktop/mobile apps (v2ray) |
+| `trojan` | `trojan://pass@host:port?params#remark` | Desktop/mobile apps |
+| `shadowsocks` | `ss://base64(method:pass)@host:port#remark` | Desktop/mobile apps |
+| `socks` | `socks5://user:pass@host:port#remark` | Browser extensions, system proxy |
+| `http` | `http://user:pass@host:port#remark` | Browser extensions, system proxy |
+
+### Supported transports
+
+| Transport | Struct | Notes |
+|-----------|--------|-------|
+| `tcp` | `TCPSettings` | HTTP obfuscation header available |
+| `ws` | `WSSettings` | CDN-compatible, path + host |
+| `grpc` | `GRPCSettings` | Multi-mode, authority |
+| `h2` | `HTTPSettings` | HTTP/2 |
+| `quic` | `QUICSettings` | UDP-based, with header types |
+| `kcp` | `KCPSettings` | mKCP with seed, capacity tuning |
+| `httpupgrade` | `HTTPUpgradeSettings` | HTTP Upgrade based |
+| `splithttp` | `SplitHTTPSettings` | Split HTTP based |
+
+### Supported security layers
+
+| Security | Struct | Notes |
+|----------|--------|-------|
+| `none` | — | No encryption |
+| `tls` | `TLSSettings` | Standard TLS with fingerprint, ALPN |
+| `reality` | `RealitySettings` | Stealth — mimics real HTTPS sites |
+
+---
+
+## Content Filtering (Family Control)
+
+Block adult content, gambling, ads, and more. Two methods available independently or combined:
+
+### Quick presets
+
+```go
+// Family safe — blocks porn, gambling, malware + Cloudflare family DNS
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug:  "de001",
+    ContentFilter: vynvpn.ContentFilterFamilySafe(),
+})
+
+// Kid safe — strict: blocks porn, gambling, malware, drugs, social, gaming
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug:  "de001",
+    ContentFilter: vynvpn.ContentFilterKidSafe(),
+})
+
+// Ads only — blocks ads and trackers
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug:  "de001",
+    ContentFilter: vynvpn.ContentFilterAdsOnly(),
+})
+```
+
+### Custom filter
+
+```go
+resp, _ := client.Connect.Connect(ctx, &vynvpn.ConnectRequest{
+    LocationSlug: "de001",
+    ContentFilter: &vynvpn.ContentFilter{
+        // Block by category (routing rules → blackhole)
+        BlockCategories: []string{"porn", "gambling", "malware", "drugs"},
+
+        // Block specific domains
+        BlockDomains: []string{
+            "domain:onlyfans.com",
+            "keyword:adult",
+            "regexp:.*xxx.*",
+        },
+
+        // DNS-level filtering (broader coverage)
+        DNS: &vynvpn.DNSFilter{
+            Servers: []string{"family-cloudflare"},
+        },
+    },
+})
+```
+
+### Block categories
+
+| Category | What it blocks |
+|----------|---------------|
+| `porn` | Adult/pornographic content |
+| `gambling` | Gambling and betting sites |
+| `ads` | Advertisements and trackers |
+| `malware` | Known malware and phishing domains |
+| `drugs` | Drug-related content |
+| `piracy` | Piracy and torrent sites |
+| `social` | Facebook, Instagram, TikTok, Twitter |
+| `gaming` | Gaming sites and platforms |
+
+### DNS filter presets
+
+| Preset | Provider | What it filters |
+|--------|----------|-----------------|
+| `family-cloudflare` | Cloudflare 1.1.1.3 | Malware + adult |
+| `family-opendns` | OpenDNS FamilyShield | Adult + phishing |
+| `family-cleanbrowsing` | CleanBrowsing | Adult + phishing + mixed |
+| `family-adguard` | AdGuard Family | Ads + adult + trackers |
+| `safe-google` | Google 8.8.8.8 | SafeSearch enforced |
+
+Or use raw IPs/DoH URLs: `[]string{"1.1.1.3", "https://dns.google/dns-query"}`
+
+### How it works
+
+- **Block categories** → Xray routing rules that send matching traffic to a blackhole outbound. Blocks at the connection level.
+- **Block domains** → Same as categories but for custom domain patterns.
+- **DNS filtering** → Sets the upstream DNS resolver to a family-safe provider. Blocks at DNS resolution before any connection is made.
+- **Combined** → Both layers active. DNS catches broad domains, routing rules catch anything that slips through.
 
 ---
 

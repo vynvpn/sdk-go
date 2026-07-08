@@ -449,3 +449,230 @@ type TwoFASetupResponse struct {
 type TwoFAStatus struct {
 	Enabled bool `json:"enabled"`
 }
+
+// ── Inbound Configuration (Dynamic VPN provisioning) ─────────────────────────
+
+// InboundConfig defines the protocol, transport, and security settings for
+// dynamically creating a VPN inbound. Used in ConnectRequest to override
+// the location's default template.
+type InboundConfig struct {
+	// Protocol: vless, vmess, trojan, shadowsocks, socks, http
+	Protocol string `json:"protocol"`
+	// Port for the inbound. 0 = auto-assign.
+	Port int `json:"port,omitempty"`
+	// Network transport: tcp, ws, grpc, h2, quic, kcp, httpupgrade, splithttp
+	Network string `json:"network"`
+	// Security layer: none, tls, reality
+	Security string `json:"security"`
+
+	// Flow for VLESS clients (e.g. "xtls-rprx-vision")
+	Flow string `json:"flow,omitempty"`
+	// Decryption (VLESS: "none", VMess: "auto")
+	Decryption string `json:"decryption,omitempty"`
+
+	// Transport settings (set only the relevant one for your network type)
+	TCPSettings         *TCPSettings         `json:"tcpSettings,omitempty"`
+	WSSettings          *WSSettings          `json:"wsSettings,omitempty"`
+	GRPCSettings        *GRPCSettings        `json:"grpcSettings,omitempty"`
+	HTTPSettings        *HTTPSettings        `json:"httpSettings,omitempty"`
+	QUICSettings        *QUICSettings        `json:"quicSettings,omitempty"`
+	KCPSettings         *KCPSettings         `json:"kcpSettings,omitempty"`
+	HTTPUpgradeSettings *HTTPUpgradeSettings `json:"httpupgradeSettings,omitempty"`
+	SplitHTTPSettings   *SplitHTTPSettings   `json:"splithttpSettings,omitempty"`
+
+	// Security settings (set only the relevant one for your security type)
+	TLSSettings     *TLSSettings     `json:"tlsSettings,omitempty"`
+	RealitySettings *RealitySettings `json:"realitySettings,omitempty"`
+
+	// Sniffing
+	SniffingEnabled      bool     `json:"sniffing_enabled,omitempty"`
+	SniffingDestOverride []string `json:"sniffing_dest_override,omitempty"`
+}
+
+// ── Transport Settings ───────────────────────────────────────────────────────
+
+// TCPSettings for tcp transport.
+type TCPSettings struct {
+	AcceptProxyProtocol bool       `json:"acceptProxyProtocol,omitempty"`
+	Header              *TCPHeader `json:"header,omitempty"`
+}
+
+// TCPHeader for TCP HTTP obfuscation.
+type TCPHeader struct {
+	Type string `json:"type"` // none, http
+}
+
+// WSSettings for websocket transport.
+type WSSettings struct {
+	Path                string            `json:"path"`
+	Host                string            `json:"host,omitempty"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	AcceptProxyProtocol bool              `json:"acceptProxyProtocol,omitempty"`
+}
+
+// GRPCSettings for gRPC transport.
+type GRPCSettings struct {
+	ServiceName string `json:"serviceName"`
+	MultiMode   bool   `json:"multiMode,omitempty"`
+	Authority   string `json:"authority,omitempty"`
+}
+
+// HTTPSettings for HTTP/2 transport.
+type HTTPSettings struct {
+	Path string   `json:"path,omitempty"`
+	Host []string `json:"host,omitempty"`
+}
+
+// QUICSettings for QUIC transport.
+type QUICSettings struct {
+	Security string      `json:"security"` // none, aes-128-gcm, chacha20-poly1305
+	Key      string      `json:"key,omitempty"`
+	Header   *QUICHeader `json:"header,omitempty"`
+}
+
+// QUICHeader type.
+type QUICHeader struct {
+	Type string `json:"type"` // none, srtp, utp, wechat-video, dtls, wireguard
+}
+
+// KCPSettings for mKCP transport.
+type KCPSettings struct {
+	MTU              int        `json:"mtu,omitempty"`
+	TTI              int        `json:"tti,omitempty"`
+	UplinkCapacity   int        `json:"uplinkCapacity,omitempty"`
+	DownlinkCapacity int        `json:"downlinkCapacity,omitempty"`
+	Congestion       bool       `json:"congestion,omitempty"`
+	ReadBufferSize   int        `json:"readBufferSize,omitempty"`
+	WriteBufferSize  int        `json:"writeBufferSize,omitempty"`
+	Header           *KCPHeader `json:"header,omitempty"`
+	Seed             string     `json:"seed,omitempty"`
+}
+
+// KCPHeader type.
+type KCPHeader struct {
+	Type string `json:"type"` // none, srtp, utp, wechat-video, dtls, wireguard
+}
+
+// HTTPUpgradeSettings for httpupgrade transport.
+type HTTPUpgradeSettings struct {
+	Path    string            `json:"path"`
+	Host    string            `json:"host,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// SplitHTTPSettings for splithttp transport.
+type SplitHTTPSettings struct {
+	Path    string            `json:"path"`
+	Host    string            `json:"host,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// ── Security Settings ────────────────────────────────────────────────────────
+
+// TLSSettings for TLS security layer.
+type TLSSettings struct {
+	ServerName  string   `json:"serverName,omitempty"`
+	ALPN        []string `json:"alpn,omitempty"`
+	Fingerprint string   `json:"fingerprint,omitempty"` // chrome, firefox, safari, randomized
+}
+
+// RealitySettings for Reality security layer.
+type RealitySettings struct {
+	Dest        string                `json:"dest"`
+	ServerNames []string              `json:"serverNames"`
+	PrivateKey  string                `json:"privateKey,omitempty"` // server-side only
+	ShortIds    []string              `json:"shortIds"`
+	Settings    RealityPublicSettings `json:"settings"`
+}
+
+// RealityPublicSettings are the client-visible Reality parameters.
+type RealityPublicSettings struct {
+	PublicKey   string `json:"publicKey"`
+	Fingerprint string `json:"fingerprint"` // chrome, firefox, safari, randomized
+	SpiderX    string `json:"spiderX,omitempty"`
+}
+
+// ── Content Filtering (Family Control) ───────────────────────────────────────
+
+// ContentFilter configures content filtering for a VPN connection.
+// Both BlockCategories and DNSConfig can be used independently or combined
+// for double-coverage filtering.
+type ContentFilter struct {
+	// BlockCategories is a list of content categories to block.
+	// Available categories:
+	//   "porn"      — adult content
+	//   "gambling"  — gambling sites
+	//   "ads"       — ads and trackers
+	//   "malware"   — known malware domains
+	//   "drugs"     — drug-related content
+	//   "piracy"    — piracy/torrent sites
+	//   "social"    — Facebook, Instagram, TikTok, Twitter
+	//   "gaming"    — gaming sites
+	BlockCategories []string `json:"block_categories,omitempty"`
+
+	// BlockDomains is a list of custom domains to block.
+	// Supports patterns:
+	//   "domain:example.com"  — exact domain match
+	//   "keyword:adult"       — blocks any domain containing "adult"
+	//   "regexp:.*xxx.*"      — regex pattern match
+	//   "geosite:category-X"  — raw geosite category
+	BlockDomains []string `json:"block_domains,omitempty"`
+
+	// DNS specifies a DNS resolver preset or custom server for DNS-level filtering.
+	// This provides broader coverage than domain blocking alone.
+	DNS *DNSFilter `json:"dns,omitempty"`
+}
+
+// DNSFilter configures DNS-level content filtering.
+type DNSFilter struct {
+	// Servers is a list of DNS resolver presets or raw IP addresses.
+	//
+	// Presets (recommended):
+	//   "family-cloudflare"     — Cloudflare 1.1.1.3 (blocks malware + adult)
+	//   "family-opendns"        — OpenDNS FamilyShield (blocks adult + phishing)
+	//   "family-cleanbrowsing"  — CleanBrowsing (blocks adult + phishing + mixed)
+	//   "family-adguard"        — AdGuard Family (blocks ads + adult + trackers)
+	//   "safe-google"           — Google SafeSearch enforced via DNS
+	//
+	// Raw (advanced):
+	//   "1.1.1.3"                    — IP address
+	//   "https://dns.google/dns-query" — DoH URL
+	Servers []string `json:"servers"`
+}
+
+// ── Content Filter Presets ────────────────────────────────────────────────────
+
+// ContentFilterFamilySafe returns a content filter preset that blocks
+// adult content, gambling, and malware using both routing rules and
+// Cloudflare's family DNS.
+func ContentFilterFamilySafe() *ContentFilter {
+	return &ContentFilter{
+		BlockCategories: []string{"porn", "gambling", "malware"},
+		DNS: &DNSFilter{
+			Servers: []string{"family-cloudflare"},
+		},
+	}
+}
+
+// ContentFilterKidSafe returns a strict content filter preset suitable
+// for children. Blocks adult, gambling, social media, gaming, malware,
+// and drugs using both routing rules and CleanBrowsing family DNS.
+func ContentFilterKidSafe() *ContentFilter {
+	return &ContentFilter{
+		BlockCategories: []string{"porn", "gambling", "malware", "drugs", "social", "gaming"},
+		DNS: &DNSFilter{
+			Servers: []string{"family-cleanbrowsing"},
+		},
+	}
+}
+
+// ContentFilterAdsOnly returns a content filter that only blocks ads
+// and trackers without restricting content categories.
+func ContentFilterAdsOnly() *ContentFilter {
+	return &ContentFilter{
+		BlockCategories: []string{"ads"},
+		DNS: &DNSFilter{
+			Servers: []string{"family-adguard"},
+		},
+	}
+}

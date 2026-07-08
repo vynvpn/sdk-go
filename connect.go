@@ -26,6 +26,17 @@ type ConnectRequest struct {
 	LocationSlug     string     `json:"location_slug,omitempty"`
 	PreferredCountry string     `json:"preferred_country,omitempty"`
 	SubscriptionID   *uuid.UUID `json:"-"` // API key mode only
+
+	// InboundConfig overrides the location's default inbound template.
+	// When set, the API uses these settings to create a dynamic inbound
+	// instead of the location's pre-configured defaults.
+	// Leave nil to use the location's default configuration.
+	InboundConfig *InboundConfig `json:"inbound_config,omitempty"`
+
+	// ContentFilter applies content filtering rules to this connection.
+	// Can be used independently of InboundConfig — applies to both
+	// dynamic inbound creation and existing inbound connections.
+	ContentFilter *ContentFilter `json:"content_filter,omitempty"`
 }
 
 // DisconnectRequest is the body for disconnecting from a VPN location.
